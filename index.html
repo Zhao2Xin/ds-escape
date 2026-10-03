@@ -1,0 +1,1282 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>DeepSeek 爆裂求生</title>
+<style>
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;background:#000;overflow:hidden;
+    font-family:"Segoe UI","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+    color:#8ea7c6;
+    -webkit-tap-highlight-color:transparent;
+  }
+  #c{display:block;width:100vw;height:100vh;cursor:none}   /* 始终隐藏系统光标 */
+  /* 屏幕震动施加在这个容器上：画布、暗角、提示一起动，否则静止的图层会互相抵消 */
+  #shake{position:fixed;inset:0;will-change:transform}
+
+  .vig{
+    position:fixed;inset:0;pointer-events:none;z-index:5;
+    background:radial-gradient(120% 90% at 50% 45%,transparent 40%,rgba(0,0,0,.55) 100%);
+  }
+  /* 玩法介绍：占据屏幕下 1/3，字号放大并带荧光 */
+  .hint{
+    position:fixed;left:50%;bottom:0;transform:translateX(-50%);z-index:10;
+    pointer-events:none;text-align:center;user-select:none;
+    width:min(92vw,900px);height:33.4vh;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;
+    padding:0 24px;box-sizing:border-box;
+    animation:glowPulse 3.6s ease-in-out infinite;
+  }
+  .hint b{
+    display:block;font-weight:700;color:#eaf2ff;
+    font-size:clamp(22px,3.4vw,38px);letter-spacing:.10em;line-height:1.3;
+    text-shadow:0 0 12px rgba(120,170,255,.95),0 0 34px rgba(77,107,254,.85),0 0 70px rgba(60,90,255,.5);
+  }
+  .hint em{
+    display:block;font-style:normal;color:#c2d8f5;
+    font-size:clamp(15px,1.6vw,21px);letter-spacing:.10em;line-height:2;
+    text-shadow:0 0 10px rgba(90,140,255,.85),0 0 26px rgba(60,100,240,.55);
+  }
+  .hint i{
+    font-style:normal;font-weight:700;color:#ffffff;
+    text-shadow:0 0 14px rgba(140,190,255,1),0 0 32px rgba(77,150,255,.9);
+  }
+  .hint.hidden{opacity:0;visibility:hidden;transition:opacity .3s}
+  @keyframes glowPulse{
+    0%,100%{opacity:.88;filter:brightness(1)}
+    50%{opacity:1;filter:brightness(1.18)}
+  }
+
+  #hud{
+    position:fixed;left:26px;top:22px;z-index:11;display:flex;gap:26px;
+    font-size:15px;letter-spacing:.10em;color:#b9cbe4;pointer-events:none;user-select:none;
+    text-shadow:0 0 14px rgba(0,0,0,.95),0 1px 3px rgba(0,0,0,.9);
+  }
+  #hud b{
+    color:#ffffff;font-weight:700;font-size:18px;letter-spacing:.04em;
+    text-shadow:0 0 18px rgba(90,140,255,.75),0 0 6px rgba(0,0,0,.9);
+  }
+  #hud.hidden{display:none}
+
+  .brand{
+    position:fixed;right:26px;top:22px;z-index:10;pointer-events:none;user-select:none;
+    display:flex;align-items:center;flex-direction:row-reverse;gap:10px;
+  }
+  .brand .dot{
+    width:8px;height:8px;border-radius:50%;background:#4d6fff;
+    box-shadow:0 0 12px 2px rgba(77,111,255,.9);animation:pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse{0%,100%{transform:scale(1);opacity:.85}50%{transform:scale(1.55);opacity:1}}
+  .brand .txt{font-size:12px;letter-spacing:.14em;color:#8ea7c6;text-shadow:0 0 12px rgba(0,0,0,.9)}
+  /* ================= 移动端适配 ================= */
+  body{touch-action:none;overscroll-behavior:none}          /* 禁止页面滚动/缩放 */
+  #boomBtn{
+    --bx:0px;--by:0px;                 /* 摆放位置；和按下缩放分开，按下时按钮不会跳位 */
+    position:fixed;z-index:12;display:none;
+    width:88px;height:88px;border-radius:50%;
+    align-items:center;justify-content:center;
+    font-size:16px;font-weight:700;letter-spacing:.10em;
+    color:#cfe0ff;background:rgba(18,28,50,.86);      /* 未蓄满也是“亮着的按钮”，不显得不可用 */
+    border:2px solid rgba(120,160,230,.62);
+    box-shadow:0 0 14px rgba(60,100,220,.35),inset 0 0 14px rgba(90,140,255,.18);
+    pointer-events:none;user-select:none;-webkit-user-select:none;
+    transform:translate(var(--bx),var(--by));
+    transition:color .18s,background .18s,border-color .18s,box-shadow .18s,transform .08s;
+  }
+  /* 游戏进行中始终可点：未蓄满按下也会被接收，只是不爆炸 */
+  #boomBtn.show{display:flex;pointer-events:auto}
+  #boomBtn:active{transform:translate(var(--bx),var(--by)) scale(.94)}
+  /* 未蓄满按下时的即时反馈：表示“收到了，还在蓄力” */
+  #boomBtn.wait{color:#fff;border-color:rgba(160,195,255,.95);background:rgba(26,40,72,.95)}
+  /* 蓄满：变亮 + 呼吸光晕 */
+  #boomBtn.ready{
+    color:#fff;background:rgba(24,44,86,.92);
+    border-color:rgba(150,190,255,.95);
+    animation:boomPulse 1.1s ease-in-out infinite;
+  }
+  @keyframes boomPulse{
+    0%,100%{box-shadow:0 0 20px rgba(77,140,255,.7),0 0 46px rgba(60,110,255,.35),inset 0 0 18px rgba(120,170,255,.35)}
+    50%{box-shadow:0 0 34px rgba(77,140,255,1),0 0 76px rgba(60,110,255,.6),inset 0 0 26px rgba(120,170,255,.55)}
+  }
+  /* 竖屏：底部正中 */
+  @media (orientation:portrait){
+    #boomBtn{left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));--bx:-50%}
+  }
+  /* 横屏：左侧正中 */
+  @media (orientation:landscape){
+    #boomBtn{left:calc(18px + env(safe-area-inset-left,0px));top:50%;--by:-50%}
+  }
+  /* 移动端：HUD / 游戏名缩小，避免遮挡 */
+  .is-mobile #hud{left:14px;top:12px;gap:12px;font-size:12px;letter-spacing:.06em}
+  .is-mobile #hud b{font-size:15px}
+  .is-mobile .brand{right:14px;top:12px;gap:7px}
+  .is-mobile .brand .txt{font-size:10px;letter-spacing:.10em}
+  .is-mobile .brand .dot{width:6px;height:6px}
+  /* 横屏矮屏：介绍压缩，避免溢出 */
+  @media (orientation:landscape) and (max-height:620px){
+    .hint{height:44vh;gap:6px;padding:0 14px}
+    .hint b{font-size:clamp(14px,2.9vh,20px);letter-spacing:.08em}
+    .hint em{font-size:clamp(10px,2.0vh,15px);line-height:1.6}
+  }
+</style>
+</head>
+<body>
+<div id="shake">
+  <canvas id="c"></canvas>
+  <div class="vig"></div>
+  <div id="hint" class="hint"></div>
+</div>
+<div class="brand"><i class="dot"></i><span class="txt">DEEPSEEK&nbsp;·&nbsp;爆裂求生</span></div>
+<div id="hud" class="hidden"></div>
+<div id="boomBtn">爆炸</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var canvas = document.getElementById("c");
+  var shakeEl = document.getElementById("shake");
+  var ctx = canvas.getContext("2d", { alpha: false });
+  var DPR = 1, W = 0, H = 0;
+  var shakeT = 0, shakeAmp = 0;
+  var SHAKE_MS = 420;
+
+  /* ================= 设备识别 =================
+     触摸能力 + UA + 小屏综合判断；可用 ?mobile=1 / ?mobile=0 强制，便于调试。 */
+  var IS_MOBILE = (function () {
+    try {
+      var search = (typeof location !== "undefined" && location.search) ? location.search : "";
+      var q = /[?&]mobile=([01])/.exec(search);
+      if (q) return q[1] === "1";
+      var ua = (typeof navigator !== "undefined" && navigator.userAgent) || "";
+      var touch = ("ontouchstart" in window) || (navigator.maxTouchPoints > 0);
+      var uaMobile = /Android|iPhone|iPad|iPod|Mobile|Windows Phone|HarmonyOS|Silk|Kindle/i.test(ua);
+      var small = Math.min(window.innerWidth || 0, window.innerHeight || 0) <= 820;
+      return !!(touch && (uaMobile || small));
+    } catch (e) { return false; }
+  })();
+  if (IS_MOBILE && document.documentElement && document.documentElement.classList) {
+    document.documentElement.classList.add("is-mobile");
+  }
+
+  function setShake(q) {
+    var amp = 12 + 30 * Math.min(1, q);
+    if (amp > shakeAmp) { shakeAmp = amp; shakeT = 0; }
+  }
+
+  /* ================= 图标：SVG -> 位图 =================
+     直接让浏览器解析 SVG（含 arc 命令），无需自己写路径解析器。 */
+  var ICON_PX = 256;
+  var PART_RGB = [77, 107, 254];
+
+  var SVG_DS = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="128" height="128"><title>DeepSeek</title><path d="M23.748 4.482c-.254-.124-.364.113-.512.234-.051.039-.094.09-.137.136-.372.397-.806.657-1.373.626-.829-.046-1.537.214-2.163.848-.133-.782-.575-1.248-1.247-1.548-.352-.156-.708-.311-.955-.65-.172-.241-.219-.51-.305-.774-.055-.16-.11-.323-.293-.35-.2-.031-.278.136-.356.276-.313.572-.434 1.202-.422 1.84.027 1.436.633 2.58 1.838 3.393.137.093.172.187.129.323-.082.28-.18.552-.266.833-.055.179-.137.217-.329.14a5.526 5.526 0 01-1.736-1.18c-.857-.828-1.631-1.742-2.597-2.458a11.365 11.365 0 00-.689-.471c-.985-.957.13-1.743.388-1.836.27-.098.093-.432-.779-.428-.872.004-1.67.295-2.687.684a3.055 3.055 0 01-.465.137 9.597 9.597 0 00-2.883-.102c-1.885.21-3.39 1.102-4.497 2.623C.082 8.606-.231 10.684.152 12.85c.403 2.284 1.569 4.175 3.36 5.653 1.858 1.533 3.997 2.284 6.438 2.14 1.482-.085 3.133-.284 4.994-1.86.47.234.962.327 1.78.397.63.059 1.236-.03 1.705-.128.735-.156.684-.837.419-.961-2.155-1.004-1.682-.595-2.113-.926 1.096-1.296 2.746-2.642 3.392-7.003.05-.347.007-.565 0-.845-.004-.17.035-.237.23-.256a4.173 4.173 0 001.545-.475c1.396-.763 1.96-2.015 2.093-3.517.02-.23-.004-.467-.247-.588zM11.581 18c-2.089-1.642-3.102-2.183-3.52-2.16-.392.024-.321.471-.235.763.09.288.207.486.371.739.114.167.192.416-.113.603-.673.416-1.842-.14-1.897-.167-1.361-.802-2.5-1.86-3.301-3.307-.774-1.393-1.224-2.887-1.298-4.482-.02-.386.093-.522.477-.592a4.696 4.696 0 011.529-.039c2.132.312 3.946 1.265 5.468 2.774.868.86 1.525 1.887 2.202 2.891.72 1.066 1.494 2.082 2.48 2.914.348.292.625.514.891.677-.802.09-2.14.11-3.054-.614zm1-6.44a.306.306 0 01.415-.287.302.302 0 01.2.288.306.306 0 01-.31.307.303.303 0 01-.304-.308zm3.11 1.596c-.2.081-.399.151-.59.16a1.245 1.245 0 01-.798-.254c-.274-.23-.47-.358-.552-.758a1.73 1.73 0 01.016-.588c.07-.327-.008-.537-.239-.727-.187-.156-.426-.199-.688-.199a.559.559 0 01-.254-.078c-.11-.054-.2-.19-.114-.358.028-.054.16-.186.192-.21.356-.202.767-.136 1.146.016.352.144.618.408 1.001.782.391.451.462.576.685.914.176.265.336.537.445.848.067.195-.019.354-.25.452z" fill="#4D6BFE"></path></svg>';
+
+
+  var SVG_CLAUDE = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="128" height="128"><title>Claude</title><path d="M4.709 15.955l4.72-2.647.08-.23-.08-.128H9.2l-.79-.048-2.698-.073-2.339-.097-2.266-.122-.571-.121L0 11.784l.055-.352.48-.321.686.06 1.52.103 2.278.158 1.652.097 2.449.255h.389l.055-.157-.134-.098-.103-.097-2.358-1.596-2.552-1.688-1.336-.972-.724-.491-.364-.462-.158-1.008.656-.722.881.06.225.061.893.686 1.908 1.476 2.491 1.833.365.304.145-.103.019-.073-.164-.274-1.355-2.446-1.446-2.49-.644-1.032-.17-.619a2.97 2.97 0 01-.104-.729L6.283.134 6.696 0l.996.134.42.364.62 1.414 1.002 2.229 1.555 3.03.456.898.243.832.091.255h.158V9.01l.128-1.706.237-2.095.23-2.695.08-.76.376-.91.747-.492.584.28.48.685-.067.444-.286 1.851-.559 2.903-.364 1.942h.212l.243-.242.985-1.306 1.652-2.064.73-.82.85-.904.547-.431h1.033l.76 1.129-.34 1.166-1.064 1.347-.881 1.142-1.264 1.7-.79 1.36.073.11.188-.02 2.856-.606 1.543-.28 1.841-.315.833.388.091.395-.328.807-1.969.486-2.309.462-3.439.813-.042.03.049.061 1.549.146.662.036h1.622l3.02.225.79.522.474.638-.079.485-1.215.62-1.64-.389-3.829-.91-1.312-.329h-.182v.11l1.093 1.068 2.006 1.81 2.509 2.33.127.578-.322.455-.34-.049-2.205-1.657-.851-.747-1.926-1.62h-.128v.17l.444.649 2.345 3.521.122 1.08-.17.353-.608.213-.668-.122-1.374-1.925-1.415-2.167-1.143-1.943-.14.08-.674 7.254-.316.37-.729.28-.607-.461-.322-.747.322-1.476.389-1.924.315-1.53.286-1.9.17-.632-.012-.042-.14.018-1.434 1.967-2.18 2.945-1.726 1.845-.414.164-.717-.37.067-.662.401-.589 2.388-3.036 1.44-1.882.93-1.086-.006-.158h-.055L4.132 18.56l-1.13.146-.487-.456.061-.746.231-.243 1.908-1.312-.006.006z" fill="#D97757" fill-rule="nonzero"></path></svg>';
+
+  /* OpenAI 官方 PNG 是白底黑图（灰度、无 alpha 通道）——需按亮度反相后重绘为白色 */
+  var GPT_PNG_DATA = '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';
+
+  function iconFromPng(dataUrl, size) {
+    var c = document.createElement("canvas");
+    c.width = size; c.height = size;
+    var g = c.getContext("2d");
+    var im = new Image();
+    im.onload = function () {
+      g.clearRect(0, 0, size, size);
+      g.drawImage(im, 0, 0, size, size);
+      try {
+        /* openai.png 是白底黑图（调色板图、无 alpha 通道）：
+           按亮度反相 —— 越暗越不透明，并统一涂成白色。
+           若只按 alpha 做掩膜，会把整块白底也保留下来。 */
+        var id = g.getImageData(0, 0, size, size);
+        var d = id.data;
+        for (var i = 0; i < d.length; i += 4) {
+          if (d[i + 3] === 0) continue;
+          var lum = d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
+          d[i + 3] = Math.round(d[i + 3] * (1 - lum / 255));
+          d[i] = d[i + 1] = d[i + 2] = 255;
+        }
+        g.putImageData(id, 0, 0);
+      } catch (e) { /* 跨源限制时保持原图 */ }
+    };
+    im.onerror = function () {
+      g.fillStyle = "#FFFFFF";
+      g.beginPath(); g.arc(size / 2, size / 2, size * 0.4, 0, Math.PI * 2); g.fill();
+    };
+    im.src = dataUrl;
+    return c;
+  }
+
+  function iconFromSvg(svg, fallback) {
+    var c = document.createElement("canvas");
+    c.width = ICON_PX; c.height = ICON_PX;
+    var g = c.getContext("2d");
+    g.clearRect(0, 0, ICON_PX, ICON_PX);
+    var im = new Image();
+    im.onload = function () { g.drawImage(im, 0, 0, ICON_PX, ICON_PX); };
+    im.onerror = function () {
+      g.fillStyle = fallback; g.beginPath();
+      g.arc(ICON_PX / 2, ICON_PX / 2, ICON_PX * 0.4, 0, Math.PI * 2); g.fill();
+    };
+    im.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+    return c;
+  }
+
+  var ICON = {
+    ds: iconFromSvg(SVG_DS, "#4D6BFE"),
+    gpt: iconFromPng("data:image/png;base64," + GPT_PNG_DATA, ICON_PX),
+    claude: iconFromSvg(SVG_CLAUDE, "#D97757")
+  };
+  /* 便于区分绘制来源（不影响渲染） */
+  for (var _ik in ICON) { if (ICON[_ik]) ICON[_ik]._tag = _ik; }
+
+
+  /* ---- 粒子骨架：从任意图标里裁出实心区域，做成可采样的形状 ----
+     炸 DS 用 DS 的形状，炸 GPT 用 GPT 的形状。 */
+  function makeSkeleton(src) {
+    var c = document.createElement("canvas");
+    c.width = ICON_PX; c.height = ICON_PX;
+    var g = c.getContext("2d");
+    try {
+      g.drawImage(src, 0, 0, ICON_PX, ICON_PX);
+      var data = g.getImageData(0, 0, ICON_PX, ICON_PX).data;
+      var minX = ICON_PX, minY = ICON_PX, maxX = -1, maxY = -1, x, y;
+      for (y = 0; y < ICON_PX; y++) for (x = 0; x < ICON_PX; x++) {
+        if (data[(y * ICON_PX + x) * 4 + 3] > 8) {
+          if (x < minX) minX = x; if (x > maxX) maxX = x;
+          if (y < minY) minY = y; if (y > maxY) maxY = y;
+        }
+      }
+      if (maxX < 0) { minX = 0; minY = 0; maxX = ICON_PX - 1; maxY = ICON_PX - 1; }
+      var w = maxX - minX + 1, h = maxY - minY + 1;
+      var cut = document.createElement("canvas");
+      cut.width = w; cut.height = h;
+      var cg = cut.getContext("2d");
+      cg.drawImage(src, minX, minY, w, h, 0, 0, w, h);
+      return { w: w, h: h, map: cg.getImageData(0, 0, w, h).data };
+    } catch (e) { return null; }
+  }
+
+  var SKEL_DS = makeSkeleton(ICON.ds);      // 主角爆炸
+  var SKEL_GPT = makeSkeleton(ICON.gpt);    // 炸烂 GPT
+  var sprite = document.createElement("canvas");
+  var sctx = sprite.getContext("2d");
+  var buf = document.createElement("canvas");
+  var bctx = buf.getContext("2d");
+
+  function spriteCopy() {
+    bctx.clearRect(0, 0, sprite.width, sprite.height);
+    bctx.drawImage(sprite, 0, 0);
+    return buf;
+  }
+
+  /* ================= 画布 ================= */
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = Math.floor(W * DPR);
+    canvas.height = Math.floor(H * DPR);
+    canvas.style.width = W + "px";
+    canvas.style.height = H + "px";
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+  resize();
+  window.addEventListener("resize", resize);
+
+  var dust = [];
+  function seedDust() {
+    dust.length = 0;
+    var n = Math.min(140, Math.round((W * H) / 14000));
+    for (var i = 0; i < n; i++) {
+      dust.push({
+        x: Math.random() * W, y: Math.random() * H,
+        z: 0.25 + Math.random() * 0.75, s: 0.4 + Math.random() * 1.5,
+        vx: (Math.random() - 0.5) * 0.06, vy: -0.05 - Math.random() * 0.16,
+        tw: Math.random() * Math.PI * 2, tws: 0.4 + Math.random() * 1.1
+      });
+    }
+  }
+  seedDust();
+
+  /* ================= 爆炸 / 粒子（沿用原有实现） ================= */
+  var LIFE_BASE = 1200, LIFE_MIN = 0.70, LIFE_MAX = 1.45;
+  var RUSH_MIN = 2.4, RUSH_MAX = 13.0, DRAG = 1.4;
+  var MAX_PARTICLES = 7000, MAX_BURST_PARTICLES = 1400, BASE_PARTICLES = 320;
+
+  function clamp01(v) { return v < 0 ? 0 : (v > 1 ? 1 : v); }
+  function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+
+  function samplePoints(skel, max) {
+    var out = [];
+    if (!skel || !skel.map) return out;
+    var map = skel.map, sw = skel.w, sh = skel.h;
+    var total = 0, cx = sw / 2, cy = sh / 2, scale = sh, x, y;
+    for (y = 0; y < sh; y++) for (x = 0; x < sw; x++) {
+      if (map[(y * sw + x) * 4 + 3] > 24) total++;
+    }
+    if (!total) return out;
+    var take = Math.min(max, total), stride = total / take, k = 0, acc = 0;
+    for (y = 0; y < sh; y++) for (x = 0; x < sw; x++) {
+      if (map[(y * sw + x) * 4 + 3] <= 24) continue;
+      acc += 1;
+      if (acc >= k * stride) {
+        k++;
+        out.push({ nx: (x + 0.5 - cx) / scale, ny: (y + 0.5 - cy) / scale });
+        if (k >= take) return out;
+      }
+    }
+    return out;
+  }
+
+  function particleTarget(r, charge, q) {
+    var n = Math.round((BASE_PARTICLES + (MAX_BURST_PARTICLES - BASE_PARTICLES) * q) * (0.75 + 0.45 * r / 400));
+    return Math.max(BASE_PARTICLES * 0.5, Math.min(MAX_BURST_PARTICLES, n));
+  }
+
+  var bursts = [];
+  var activeParticles = 0;
+
+  function spawnBurst(x, y, r, charge, skel) {
+    skel = skel || SKEL_DS;
+    if (!skel) return;
+    var q = charge * charge;
+    var want = particleTarget(r, charge, q);
+    var pts = samplePoints(skel, want);
+    var rushMin = RUSH_MIN + (RUSH_MAX - RUSH_MIN) * q * 0.45;
+    var rushMax = RUSH_MAX * (0.60 + 0.40 * charge);
+    var lifeMin = LIFE_MIN + (LIFE_MAX - LIFE_MIN) * q * 0.50;
+    var lifeMax = LIFE_MIN + (LIFE_MAX - LIFE_MIN) * (0.30 + 0.70 * charge);
+    var win = 130 + 170 * charge;
+    var particles = [];
+    for (var i = 0; i < pts.length; i++) {
+      if (activeParticles + particles.length >= MAX_PARTICLES) break;
+      var p = pts[i];
+      var px = x + p.nx * r, py = y + p.ny * r;
+      var dx = px - x, dy = py - y;
+      var dist = Math.sqrt(dx * dx + dy * dy);
+      var sp = (rushMin + dist / r * (rushMax - rushMin)) * (0.65 + Math.random() * 0.7);
+      particles.push({
+        x: px, y: py,
+        vx: dx / (dist || 1) * sp, vy: dy / (dist || 1) * sp,
+        birth: win * Math.min(1, dist / (r * 0.55)) * (0.4 + Math.random() * 0.6),
+        size: 0.9 + Math.random() * 1.7,
+        life: lifeMin + Math.random() * (lifeMax - lifeMin)
+      });
+    }
+    activeParticles += particles.length;
+    bursts.push({
+      x: x, y: y, w1: r * (1.08 + charge * 0.32), charge: charge, q: q,
+      start: performance.now(), birthWin: win, particles: particles, count: particles.length
+    });
+  }
+
+  /* 玩家蓄力爆炸（保留原有玩法） */
+  var PRESS_CHARGE_MS = 1050, GROWTH = 1.88, GROWTH_MIN = 1.02;
+  /* 按钮交互的"参考点重建窗口"（毫秒，上限）。
+     真机实测：食指按/松按钮时，搭在屏幕上的拇指会被手部姿态带着漂移约 50px，鲸鱼会跟着漂。
+     处理：按下与松开各开一个窗口，窗口内该手指只更新参考点、不产生位移；
+           一旦该手指位移 ≤ REBASE_STILL_EPS（已经停住）就立刻结束窗口，
+           所以通常只冻结几十毫秒，且与"按住多久"无关。 */
+  var BTN_REBASE_MAX_MS = 100;
+  var REBASE_STILL_EPS = 2;
+  var FLIP_DEAD = 2.5;      // 翻转方向死区（累计位移像素）：滤掉触摸/触控板抖动
+  var FLIP_STEP = 0.045;    // 翻转动画步进：约 22 帧 ≈ 350ms
+  var CHARGE_FULL_AT = 0.92;    // 蓄力到 92% 即视为“炸满”，可摧毁 GPT
+  var playerGlow = 0;
+
+  /* 主角半径：爆炸半径、光标尺寸都由它推导。
+     移动端按屏幕短边取更小的值，DS 与爆炸范围会一起缩小。 */
+  function playerRadius() {
+    if (IS_MOBILE) return Math.max(16, Math.min(W, H) * 0.055);
+    return Math.min(48, Math.max(34, Math.min(W, H) * 0.052));
+  }
+
+  function explodeAt(x, y, charge, big) {
+    var r = playerRadius() * (GROWTH_MIN + GROWTH * (1 - Math.pow(1 - clamp01(charge), 2.4)));
+    if (big) r *= 2.6;
+    spawnBurst(x, y, r, charge);
+    playerGlow = 1;
+    setShake(charge);
+    /* 蓄力满时：把爆炸范围里的 GPT 一起炸烂（化为 GPT 形状的粒子） */
+    blastGpt(x, y, r, charge);
+  }
+
+  /* 炸烂爆心附近的 GPT：必须蓄力满 + 距离足够近。
+     守卫做在函数内部，任何调用路径都不会误炸。 */
+  function blastGpt(x, y, r, charge) {
+    if (charge < CHARGE_FULL_AT) return 0;      // 没蓄满，炸不动
+    var reach = r * 1.45 + 26;
+    var killed = 0;
+    for (var i = GAME.sats.length - 1; i >= 0; i--) {
+      var s = GAME.sats[i];
+      if (s.type !== "gpt") continue;
+      var dx = s.x - x, dy = s.y - y;
+      if (dx * dx + dy * dy > reach * reach) continue;
+      /* 用 GPT 自己的形状炸成粒子，威力随它的大小 */
+      spawnBurst(s.x, s.y, s.size * 0.92 * s.pulse, 1, SKEL_GPT);
+      GAME.sats.splice(i, 1);
+      GAME.kills++;
+      killed++;
+    }
+    if (killed) setShake(1);
+    return killed;
+  }
+
+  /* ================= 游戏 ================= */
+  var hintEl = document.getElementById("hint");
+  var hudEl = document.getElementById("hud");
+  function hideHint() { hintEl.classList.add("hidden"); }
+
+  var GAME = {
+    state: "title",     // title | play | dead
+    t0: 0, elapsed: 0, playTime: 0, deaths: 0, kills: 0,
+    player: { x: 0, y: 0, tx: 0, ty: 0, r: 30, flip: 1, flipWant: 1, flipS: 1, flipY: 1, flipT: 0, dxAcc: 0, lastX: 0 },
+    sats: [], nextSpawn: 800,
+    press: null,
+    autoCharge: 0,      // 移动端：自动蓄力进度 0~1（蓄满后保持）
+    touch: null,        // 移动端：当前滑动状态
+    btnPointer: null,   // 移动端：按在爆炸按钮上的指针，绝不参与滑动
+    rebaseUntil: 0      // 移动端：按钮交互"重建参考点"窗口的截止时刻
+  };
+  var mouse = { x: 0, y: 0, inside: false, clickFrames: 0 };
+
+  /* 难度按累计游玩时间爬升，60s 到顶；重开时清零 */
+  function difficulty() { return Math.min(1, GAME.playTime / 60000); }
+
+  function resetGame() {
+    GAME.state = "play";
+    GAME.t0 = performance.now();
+    GAME.elapsed = 0;
+    GAME.playTime = 0;          // 难度随累计游玩时间上升，新一局清零
+    GAME.kills = 0;
+    GAME.sats = [];
+    GAME.nextSpawn = 700;
+    GAME.press = null;
+    GAME.autoCharge = 0;
+    GAME.touch = null;
+    GAME.btnPointer = null;
+    GAME.rebaseUntil = 0;
+    GAME.player.x = IS_MOBILE ? W / 2 : (mouse.inside ? mouse.x : W / 2);
+    GAME.player.y = IS_MOBILE ? H / 2 : (mouse.inside ? mouse.y : H / 2);
+    GAME.player.tx = GAME.player.x; GAME.player.ty = GAME.player.y;
+    /* 重置翻转判定基准：否则重开后位置突变会被当成一次大位移而误翻 */
+    GAME.player.lastX = GAME.player.x;
+    GAME.player.lastTx = GAME.player.tx;
+    GAME.player.dxAcc = 0;
+    GAME.player.flipWant = GAME.player.flip;
+    GAME.player.flipT = 0;
+    GAME.player.flipS = GAME.player.flip;
+    GAME.player.flipY = 1;
+    playerGlow = 1;
+    hideHint();
+  }
+
+  function playerDie() {
+    if (GAME.state !== "play") return;
+    explodeAt(GAME.player.x, GAME.player.y, 1, true);
+    setShake(1);
+    GAME.state = "dead";
+    GAME.deaths++;
+    window.setTimeout(function () {
+      if (GAME.state !== "dead") return;    // 已经重开了就不弹
+      hintEl.classList.remove("hidden");
+      hintEl.innerHTML =
+        "<b>游戏结束</b>" +
+        "<em>存活 <i>" + (GAME.elapsed / 1000).toFixed(1) + "s</i></em>" +
+        "<em>按 <i>空格</i> / 点击画面 重新开始</em>";
+    }, 700);
+  }
+
+  /* ---------- 障碍物 ---------- */
+  function spawnSat() {
+    var d = difficulty();
+    var roll = Math.random();
+    if (roll < 0.5) spawnGpt(d);
+    else spawnClaude(d);
+    /* GPT 不再自动消失，所以生成间隔拉长一些，避免越堆越多 */
+    GAME.nextSpawn = 1200 - 650 * d + Math.random() * (600 - 300 * d);
+  }
+
+  /* GPT：从画面外飞入，旋转 + 大小脉动，反弹若干次后飞出。个体之间大小/速度不一 */
+  function spawnGpt(d) {
+    var cap = maxObSize();
+    var size = cap * (0.52 + Math.random() * 0.48);    // 每个个体大小不同（受窗口约束）
+    var fromLeft = Math.random() < 0.5;
+    var ang = (Math.random() - 0.5) * 1.1;
+    var sp = (120 + 240 * d) * (0.65 + Math.random() * 0.85);   // 个体速度也有差异
+    var vx = (fromLeft ? 1 : -1) * Math.cos(ang) * sp;
+    var vy = Math.sin(ang) * sp;
+    GAME.sats.push({
+      type: "gpt", x: fromLeft ? -90 : W + 90, y: 80 + Math.random() * (H - 160),
+      vx: vx, vy: vy, size: size, rot: Math.random() * 6.28,
+      /* 小个子转得更快，大个子转得慢，看起来更有性格 */
+      spin: (Math.random() < 0.5 ? -1 : 1) * (2.6 - size / 60) * (0.8 + 0.9 * d + Math.random() * 0.8),
+      pulse: 1, pulseT: Math.random() * 6.28,
+      bounce: 2 + Math.round(3 * d + Math.random() * 2), edge: 0.16 + 0.30 * d,
+      life: 11 - 3 * d
+    });
+  }
+
+  /* 障碍物尺寸上限随窗口短边变化，小屏不放巨物 */
+  function maxObSize() { return Math.min(104, Math.max(54, Math.min(W, H) * 0.125)); }
+
+  /* 只在画面四周的边缘带里取点：避开中间区域 */
+  function edgeSpot() {
+    var m = 70;
+    var band = Math.max(90, Math.min(W, H) * 0.17);
+    var side = Math.floor(Math.random() * 4);
+    if (side === 0) return { x: m + Math.random() * (W - m * 2), y: m + Math.random() * band };                    // 上
+    if (side === 1) return { x: m + Math.random() * (W - m * 2), y: H - m - Math.random() * band };                // 下
+    if (side === 2) return { x: m + Math.random() * band, y: m + Math.random() * (H - m * 2) };                    // 左
+    return { x: W - m - Math.random() * band, y: m + Math.random() * (H - m * 2) };                                // 右
+  }
+
+  /* 找一个离玩家足够远的随机位置，避免贴脸生成来不及反应 */
+  function farSpot(minDist) {
+    var margin = 70;
+    for (var i = 0; i < 40; i++) {
+      var x = margin + Math.random() * Math.max(1, W - margin * 2);
+      var y = margin + Math.random() * Math.max(1, H - margin * 2);
+      var dx = x - GAME.player.x, dy = y - GAME.player.y;
+      if (dx * dx + dy * dy >= minDist * minDist) return { x: x, y: y };
+    }
+    /* 兜底：取离玩家最远的那个角 */
+    return {
+      x: GAME.player.x < W / 2 ? W - margin : margin,
+      y: GAME.player.y < H / 2 ? H - margin : margin
+    };
+  }
+
+  function spawnDist() { return Math.min(W, H) * 0.34; }
+
+  /* Claude：随机位置出现，预警后放射橙色射线，放若干次后消失。
+     每个个体大小不同（40~72），射线根数与粗细都随个体大小变化。 */
+  function spawnClaude(d) {
+    var size = maxObSize() * (0.60 + Math.random() * 0.40);
+    var spot = farSpot(spawnDist() + size * 0.5);
+    GAME.sats.push({
+      type: "claude", x: spot.x, y: spot.y,
+      size: size, rot: Math.random() * Math.PI * 2, appears: 0, life: 6 + 4 * d,
+      volleys: 2 + Math.round(1.4 * d), fired: 0, cd: 1100, rays: [], wave: []
+    });
+  }
+
+  function fireRays(sat) {
+    var d = difficulty();
+    /* 射线根数 1~5 根随机，大体型偏向更多根 */
+    var lo = Math.random() < 0.5 ? 1 : 2;
+    var hi = 5;
+    var n = lo + Math.floor(Math.random() * (hi - lo + 1));
+    if (sat.size > 76 && n < 3) n = 3;        // 大 Claude 至少 3 根
+    var base = Math.random() * 6.28;
+    for (var i = 0; i < n; i++) {
+      var ang = base + i * (6.283 / n) + (Math.random() - 0.5) * 0.45;
+      sat.wave.push({
+        ang: ang, state: "warn", t: 0,
+        warn: 760 - 300 * d,       // 难度越高，留给玩家的反应时间越短
+        life: 300,
+        /* 射线粗细与本体大小挂钩 */
+        w: sat.size / 62,
+        len: Math.sqrt(W * W + H * H) * 1.1
+      });
+    }
+  }
+
+  function updateSats(dt, f) {
+    var d = difficulty();
+    var i, j, s;
+    GAME.elapsed += dt;
+    GAME.playTime += dt;
+
+    for (i = GAME.sats.length - 1; i >= 0; i--) {
+      s = GAME.sats[i];
+      s.life -= dt / 1000;
+
+      if (s.type === "gpt") {
+        s.x += s.vx * dt / 1000;
+        s.y += s.vy * dt / 1000;
+        s.rot += s.spin * dt / 1000;
+        s.pulseT += dt / 1000 * 4.2;
+        s.pulse = 1 + 0.20 * Math.sin(s.pulseT);       // 视觉大小持续变化
+        if (!s.noBounce) {
+          if (s.x < s.size * 0.6 && s.vx < 0) bounce(s, "x");
+          if (s.x > W - s.size * 0.6 && s.vx > 0) bounce(s, "x");
+          if (s.y < s.size * 0.6 && s.vy < 0) bounce(s, "y");
+          if (s.y > H - s.size * 0.6 && s.vy > 0) bounce(s, "y");
+        }
+        /* 不自动消失：反弹用完后沿直线飞出画面，然后再从边缘飞回来。
+           用“是否在屏内”这个标志判断，避免用坐标阈值时和重新入场的位置打架。 */
+        if (s.x > -40 && s.x < W + 40 && s.y > -40 && s.y < H + 40) {
+          s.wasIn = true;
+          s.reenter = undefined;
+        } else if (s.wasIn) {
+          if (s.reenter === undefined) s.reenter = 1800;
+          s.reenter -= dt;
+          if (s.reenter <= 0) reenter(s);
+        }
+        continue;
+      }
+
+      s.appears = Math.min(1, s.appears + dt / 320);
+      if (s.type === "claude") {
+        /* 不再旋转：朝向在生成时就已固定 */
+        s.cd -= dt;
+        if (s.fired < s.volleys && s.cd <= 0 && s.appears >= 1) {
+          fireRays(s); s.fired++; s.cd = 1250 - 600 * d;
+        }
+        for (j = s.wave.length - 1; j >= 0; j--) {
+          var w = s.wave[j];
+          w.t += dt;
+          if (w.state === "warn" && w.t >= w.warn) { w.state = "active"; w.t = 0; }
+          else if (w.state === "active" && w.t >= w.life) s.wave.splice(j, 1);
+        }
+        if (s.life <= 0 && s.fired >= s.volleys && !s.wave.length) GAME.sats.splice(i, 1);
+        if (s.life <= -2) GAME.sats.splice(i, 1);
+        continue;
+      }
+
+
+    }
+
+    GAME.nextSpawn -= dt;
+    if (GAME.nextSpawn <= 0) spawnSat();
+  }
+
+  /* 飞到画面外的 GPT 重新入场：从随机一边飞回来 */
+  function reenter(s) {
+    var fromLeft = Math.random() < 0.5;
+    var ang = (Math.random() - 0.5) * 1.1;
+    var sp = Math.sqrt(s.vx * s.vx + s.vy * s.vy) || 200;
+    s.x = fromLeft ? -90 : W + 90;              // 就在屏幕外一点，马上会飞进来
+    s.y = 80 + Math.random() * Math.max(1, H - 160);
+    s.vx = (fromLeft ? 1 : -1) * Math.cos(ang) * sp;
+    s.vy = Math.sin(ang) * sp;
+    s.bounce = 2 + Math.round(3 * difficulty() + Math.random() * 2);
+    s.noBounce = false;
+    s.edge = 0.16 + 0.30 * difficulty();
+    s.reenter = undefined;
+    s.wasIn = false;
+  }
+
+  function bounce(s, axis) {
+    var half = s.size * 0.6;
+    if (axis === "x") {
+      s.x = s.vx > 0 ? W - half : half;
+      s.vx = -s.vx;
+    } else {
+      s.y = s.vy > 0 ? H - half : half;
+      s.vy = -s.vy;
+    }
+    s.spin = -s.spin * 1.12;
+    s.bounce--;
+    if (s.bounce <= 0) { s.edge = 0; s.noBounce = true; }   // 反弹次数用完 -> 允许飞出
+  }
+
+  /* ---------- 碰撞 ---------- */
+  function hitPlayer(x, y, r) {
+    var dx = x - GAME.player.x, dy = y - GAME.player.y;
+    var rr = r + GAME.player.r * 0.62;
+    return dx * dx + dy * dy < rr * rr;
+  }
+
+  function checkCollisions() {
+    var p = GAME.player;
+    for (var i = 0; i < GAME.sats.length; i++) {
+      var s = GAME.sats[i];
+      if (s.type === "gpt") {
+        if (hitPlayer(s.x, s.y, s.size * 0.44 * s.pulse)) return true;
+      } else if (s.appears > 0.5) {
+        if (hitPlayer(s.x, s.y, s.size * 0.42)) return true;
+        if (s.type === "claude" && s.wave) {
+          for (var j = 0; j < s.wave.length; j++) {
+            var w = s.wave[j];
+            if (w.state !== "active") continue;
+            /* 点到射线的距离 */
+            var ca = Math.cos(w.ang), sa = Math.sin(w.ang);
+            var vx = p.x - s.x, vy = p.y - s.y;
+            var proj = vx * ca + vy * sa;
+            if (proj < 0) continue;
+            var perp = Math.abs(-vx * sa + vy * ca);
+            if (perp < 9 + p.r * 0.45 && proj < w.len) return true;
+          }
+        }
+
+      }
+    }
+    return false;
+  }
+
+  /* ================= 输入 =================
+     桌面端：光标引导 + 按住蓄力 / 松开爆炸
+     移动端：滑动任意区域（位移 1:1 驱动本体）；蓄力自动进行；
+             点「爆炸」按钮释放（必须蓄满，否则无效） */
+  var boomBtn = document.getElementById("boomBtn");
+
+  /* 移动端爆炸按钮：只表示是否就绪，进度环仍画在 DS 身上 */
+  function refreshBoomBtn() {
+    if (!IS_MOBILE || !boomBtn) return;
+    var playing = (GAME.state === "play");
+    boomBtn.classList.toggle("show", playing);
+    boomBtn.classList.toggle("ready", playing && GAME.autoCharge >= 1);
+  }
+
+  /* 释放爆炸：按钮始终可点，这里只判断“能不能炸”。
+     未蓄满 -> 不爆炸（返回 false），按钮状态本身不受影响。 */
+  function mobileBoom() {
+    if (GAME.state !== "play") return false;
+    if (GAME.autoCharge < 1) return false;      // 未蓄满：不爆炸
+    GAME.autoCharge = 0;                        // 释放后从头蓄力
+    explodeAt(GAME.player.x, GAME.player.y, 1);
+    return true;
+  }
+
+  var boomWaitTimer = 0;
+  if (boomBtn) {
+    /* 按钮始终可用：任何一次按下都会被按钮接收（不会被当成滑动） */
+    boomBtn.addEventListener("pointerdown", function (ev) {
+      ev.stopPropagation();                     // 不要触发“滑动/开始游戏”
+      ev.preventDefault();
+      /* 按钮上的触点不参与滑动。
+         注意：只清掉“按按钮的这根手指”自己的滑动状态——
+         如果另一根手指正在拖拽，动它会直接打断拖动（玩家得重新按一次）。 */
+      if (GAME.touch && GAME.touch.id === ev.pointerId) GAME.touch = null;
+      GAME.btnPointer = ev.pointerId;
+      /* 按下瞬间开一个很短的"重建参考点"窗口：吃掉按下去那一下的拇指漂移。
+         窗口与"按住多久"无关（上限 BTN_REBASE_MAX_MS，且手指一停就提前结束），
+         所以按住按钮期间仍然可以正常拖拽。 */
+      GAME.rebaseUntil = performance.now() + BTN_REBASE_MAX_MS;
+      var fired = mobileBoom();
+      if (fired) {
+        boomBtn.classList.remove("wait");
+      } else if (GAME.state === "play") {
+        /* 未蓄满：不爆炸，但给一个明确反馈，让玩家知道这一下被收到了 */
+        if (boomWaitTimer) window.clearTimeout(boomWaitTimer);
+        boomBtn.classList.add("wait");
+        boomWaitTimer = window.setTimeout(function () {
+          boomWaitTimer = 0;
+          boomBtn.classList.remove("wait");
+        }, 240);
+      }
+      refreshBoomBtn();
+    });
+  }
+
+  window.addEventListener("pointermove", function (ev) {
+    if (IS_MOBILE) {
+      var t = GAME.touch;
+      if (!t || ev.pointerId !== t.id) return;
+      /* 按钮交互的"幽灵漂移"窗口：按/松按钮时，搭在屏幕上的另一根手指会被手部姿态
+         带着漂移约 50px（真机实测），这里让该手指只更新参考点、不产生位移。
+         窗口上限 BTN_REBASE_MAX_MS，但只要检测到手指已经停住（本次位移 ≤ REBASE_STILL_EPS）
+         就立刻结束窗口 —— 所以通常只冻结几十毫秒，且与按住多久无关。
+         注意：绝不清空 GAME.touch，窗口一过拖拽立刻继续，不需要重新按屏幕。 */
+      if (performance.now() < GAME.rebaseUntil) {
+        var rdx = ev.clientX - t.lastX, rdy = ev.clientY - t.lastY;
+        t.lastX = ev.clientX; t.lastY = ev.clientY;
+        t.dx = 0; t.dy = 0;
+        if (Math.abs(rdx) <= REBASE_STILL_EPS && Math.abs(rdy) <= REBASE_STILL_EPS) {
+          GAME.rebaseUntil = 0;                 // 漂移结束（手指停住）：立刻恢复拖拽
+        }
+        return;
+      }
+      if (GAME.btnPointer !== null && ev.pointerId === GAME.btnPointer) return;   // 按钮上的触点在拖拽也不移动
+      t.dx += ev.clientX - t.lastX;             // 累计本帧滑动位移
+      t.dy += ev.clientY - t.lastY;
+      t.lastX = ev.clientX;
+      t.lastY = ev.clientY;
+      return;
+    }
+    mouse.x = ev.clientX; mouse.y = ev.clientY; mouse.inside = true;
+  }, { passive: true });
+
+  window.addEventListener("pointerdown", function (ev) {
+    if (IS_MOBILE) {
+      if (GAME.state !== "play") { resetGame(); return; }   // 触摸任意处开始 / 重开
+      /* 每次按下都重建基准：即使上一次的 pointerup 丢了，
+         也不会拿旧的 lastX 去和本次触点相减而跳变 */
+      GAME.touch = { id: ev.pointerId, lastX: ev.clientX, lastY: ev.clientY, dx: 0, dy: 0 };
+      /* 全新按下是一次明确的拖拽意图：结束上一个漂移窗口（按钮的事件被
+         stopPropagation 拦住，走不到这里，所以不会误清按钮触发的窗口） */
+      GAME.rebaseUntil = 0;
+      /* 这根手指现在开始拖拽了；如果它曾被登记为按钮指针（按钮的 pointerup 丢了），
+         在这里解除，避免此后所有移动都被忽略、必须再点一次才能恢复 */
+      if (GAME.btnPointer !== null && GAME.btnPointer === ev.pointerId) GAME.btnPointer = null;
+      return;
+    }
+    if (ev.button !== undefined && ev.button !== 0 && ev.pointerType === "mouse") return;
+    mouse.x = ev.clientX; mouse.y = ev.clientY; mouse.inside = true;
+    mouse.clickFrames = 16;                     // 光标点击反馈：约 16 帧膨胀后衰减
+    if (GAME.state !== "play") { resetGame(); return; }
+    if (!GAME.press) GAME.press = { t0: performance.now() };
+  }, { passive: true });
+
+  function releasePress() {
+    if (!GAME.press || GAME.state !== "play") { GAME.press = null; return; }
+    var held = performance.now() - GAME.press.t0;
+    var charge = clamp01(held / PRESS_CHARGE_MS);
+    GAME.press = null;
+    explodeAt(GAME.player.x, GAME.player.y, Math.max(0.05, charge));
+  }
+  window.addEventListener("pointerup", function (ev) {
+    if (IS_MOBILE) {
+      if (GAME.btnPointer !== null && ev.pointerId === GAME.btnPointer) {
+        GAME.btnPointer = null;
+        /* 松开瞬间拇指会往回漂一次，用同样的短窗口把它也吃掉（否则鲸鱼会被往下带一次） */
+        GAME.rebaseUntil = performance.now() + BTN_REBASE_MAX_MS;
+      }
+      if (GAME.touch && ev.pointerId === GAME.touch.id) GAME.touch = null;   // 抬手立即停
+      return;
+    }
+    releasePress();
+  }, { passive: true });
+  window.addEventListener("pointercancel", function (ev) {
+    if (IS_MOBILE) { GAME.touch = null; GAME.btnPointer = null; GAME.rebaseUntil = 0; return; }
+    GAME.press = null;
+  }, { passive: true });
+
+  window.addEventListener("keydown", function (ev) {
+    if (ev.code !== "Space" && ev.key !== "Enter") return;
+    ev.preventDefault && ev.preventDefault();
+    if (GAME.state !== "play") { resetGame(); return; }
+    if (IS_MOBILE) { mobileBoom(); return; }     // 移动端：空格等同按爆炸按钮
+    if (!GAME.press) GAME.press = { t0: performance.now() };
+  });
+  window.addEventListener("keyup", function (ev) {
+    if (ev.code !== "Space" && ev.key !== "Enter") return;
+    if (!IS_MOBILE) releasePress();
+  });
+  window.addEventListener("blur", function () { GAME.press = null; GAME.touch = null; GAME.btnPointer = null; });
+
+  /* ================= 绘制 ================= */
+  /* flipX / flipY：翻转用的水平、垂直缩放。
+     flipX: +1 = 原图，-1 = 左右镜像，中间的数值 = 翻转动画过程。
+     镜像用 ctx.scale(-1,1) 实现（而不是给 drawImage 传负宽度），兼容性更稳；
+     flipY 让翻转中途轻微压扁，看起来是“转身”而不是“压扁”。 */
+  function drawIcon(img, x, y, size, rot, alpha, glow, glowColor, flipX, flipY) {
+    var fx = (flipX === undefined) ? 1 : flipX;
+    var fy = (flipY === undefined) ? 1 : flipY;
+    var g = ICON_PX;
+    if (Math.abs(fx) < 0.03) fx = fx < 0 ? -0.03 : 0.03;   // 避免宽度退化为 0
+    var w = size * Math.abs(fx);
+    var h = size * fy;
+    ctx.save();
+    ctx.translate(x, y);
+    if (fx < 0) ctx.scale(-1, 1);
+    if (rot) ctx.rotate(rot);
+    if (glow) {
+      ctx.shadowColor = glowColor || "#4D6BFE";
+      ctx.shadowBlur = glow;
+    }
+    ctx.globalAlpha = alpha === undefined ? 1 : alpha;
+    ctx.drawImage(img, -w / 2, -h / 2, w, h);
+    ctx.restore();
+  }
+
+  function drawPlayer(now) {
+    var p = GAME.player;
+    var charge = IS_MOBILE
+      ? GAME.autoCharge
+      : (GAME.press ? clamp01((now - GAME.press.t0) / PRESS_CHARGE_MS) : 0);
+    var size = p.r * 2 * (1 + 0.30 * charge);
+    /* 图标原图朝左：往右移动翻成朝右，往左移动翻回朝左；
+       翻转后保持该朝向，直到下一次反向移动。
+       方向判定 = 累计位移 + 死区（FLIP_DEAD）：手指/触控板的微小抖动会被滤掉，
+       而真实移动累积几帧就能越过阈值，所以既不误翻也不迟钝。
+       翻转动画约 350ms；若中途方向又变回来，动画会倒着走回去而不是瞬间弹回，
+       这样就不会出现“翻到一半又跳回去”的闪烁。 */
+    var dxs;
+    if (IS_MOBILE) {
+      dxs = p.x - p.lastX;                      // 移动端：看本体实际位移
+      p.lastX = p.x;
+    } else {
+      dxs = p.tx - (p.lastTx === undefined ? p.tx : p.lastTx);
+      p.lastTx = p.tx;
+    }
+    p.dxAcc = (p.dxAcc === undefined ? 0 : p.dxAcc) + dxs;
+    if (p.dxAcc > FLIP_DEAD) { p.flipWant = -1; p.dxAcc = 0; }        // 往右挪 -> 镜像
+    else if (p.dxAcc < -FLIP_DEAD) { p.flipWant = 1; p.dxAcc = 0; }   // 往左挪 -> 原图
+    if (p.flipWant === undefined) p.flipWant = p.flip;
+
+    var anim = 0;                                  // +1 正转，-1 倒带
+    if (p.flipWant !== p.flip) anim = 1;
+    else if (p.flipT > 0) anim = -1;
+
+    if (anim !== 0) {
+      p.flipT = clamp01(p.flipT + FLIP_STEP * anim);
+      if (anim > 0 && p.flipT >= 1) {              // 转到位
+        p.flip = p.flipWant;
+        p.flipT = 0;
+        p.flipS = p.flip;
+        p.flipY = 1;
+      } else if (anim < 0 && p.flipT <= 0) {       // 倒带回原位
+        p.flipT = 0;
+        p.flipS = p.flip;
+        p.flipY = 1;
+      } else {
+        p.flipS = Math.cos(Math.PI * p.flipT) * p.flip;       // 1 -> 0 -> -1
+        p.flipY = 1 - 0.14 * Math.sin(Math.PI * p.flipT);     // 中途压扁，像真的在转身
+      }
+    } else {
+      p.flipS = p.flip;
+      p.flipY = 1;
+    }
+    var rot = charge * Math.sin(now * 0.05) * 0.05;   // 仅蓄力时的轻微抖动
+
+    /* 蓄力进度环 */
+    if (charge > 0.02) {
+      ctx.save();
+      ctx.globalAlpha = 0.30 + 0.5 * charge;
+      ctx.strokeStyle = "rgba(150,190,255,1)";
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r * 1.75, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * charge);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    var glow = 14 + 26 * charge + playerGlow * 26;
+    drawIcon(ICON.ds, p.x, p.y, size, rot, 1, glow, "rgba(77,107,254,0.95)", p.flipS, p.flipY);
+
+    /* 生命光晕 */
+    if (playerGlow > 0.01) {
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.globalAlpha = playerGlow * 0.35;
+      var rg = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 4);
+      rg.addColorStop(0, "rgba(120,160,255,0.7)");
+      rg.addColorStop(1, "rgba(60,90,255,0)");
+      ctx.fillStyle = rg;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r * 4, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  function drawSats(now) {
+    var i, j;
+    for (i = 0; i < GAME.sats.length; i++) {
+      var s = GAME.sats[i];
+
+      if (s.type === "gpt") {
+        var fl = 1;
+        if (s.noBounce) {
+          /* 快飞出画面时淡出 */
+          var m = Math.min(s.x, W - s.x, s.y, H - s.y);
+          fl = clamp01(m / 140);
+        }
+        drawIcon(ICON.gpt, s.x, s.y, s.size * s.pulse, s.rot, fl, 16, "rgba(16,163,127,0.9)");
+        continue;
+      }
+
+      var al = s.appears < 1 ? s.appears : (s.life < 0.6 ? clamp01(s.life / 0.6) : 1);
+      drawIcon(ICON[s.type], s.x, s.y, s.size, s.rot, al, 14, "rgba(217,119,87,0.9)");
+
+      if (s.type === "claude") {
+        for (j = 0; j < s.wave.length; j++) {
+          var w = s.wave[j];
+          var ca = Math.cos(w.ang), sa = Math.sin(w.ang);
+          var x2 = s.x + ca * w.len, y2 = s.y + sa * w.len;
+          if (w.state === "warn") {
+            /* 预警：闪烁细线，越接近发射越亮越粗（粗细随本体大小） */
+            var pr = clamp01(w.t / w.warn);
+            var blink = (0.35 + 0.65 * (Math.sin(w.t * 0.045) > 0 ? 1 : 0.15));
+            ctx.save();
+            ctx.globalCompositeOperation = "lighter";
+            ctx.globalAlpha = (0.22 + 0.6 * pr) * blink;
+            ctx.strokeStyle = "#FFB37A";
+            ctx.lineWidth = (1 + 3.5 * pr) * w.w;
+            ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(x2, y2); ctx.stroke();
+            ctx.restore();
+          } else {
+            var ta = 1 - clamp01(w.t / w.life);
+            ctx.save();
+            ctx.globalCompositeOperation = "lighter";
+            var lg = ctx.createLinearGradient(s.x, s.y, x2, y2);
+            lg.addColorStop(0, "rgba(255,190,130," + (0.85 * ta).toFixed(3) + ")");
+            lg.addColorStop(0.5, "rgba(217,119,87," + (0.5 * ta).toFixed(3) + ")");
+            lg.addColorStop(1, "rgba(217,119,87,0)");
+            ctx.strokeStyle = lg;
+            ctx.lineWidth = (16 * ta + 3) * w.w;
+            ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(x2, y2); ctx.stroke();
+            ctx.strokeStyle = "rgba(255,235,215," + (0.85 * ta).toFixed(3) + ")";
+            ctx.lineWidth = (2.5 * ta + 0.8) * w.w;
+            ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(x2, y2); ctx.stroke();
+            ctx.restore();
+          }
+        }
+
+      }
+    }
+  }
+
+  function drawBursts(now, dt, f) {
+    var blit = null;
+    /* 活跃粒子数每帧实算，避免“出生时加、消亡时减”的计数器不同步 */
+    activeParticles = 0;
+    for (var b = bursts.length - 1; b >= 0; b--) {
+      var bu = bursts[b];
+      var age = now - bu.start;
+
+      var flashDur = 320 + 260 * bu.charge;
+      if (age < flashDur) {
+        var bt = age / flashDur;
+        var fa = Math.pow(1 - bt, 1.5);
+        var fr = bu.w1 * (0.35 + 1.5 * easeOutCubic(bt));
+        var fg = ctx.createRadialGradient(bu.x, bu.y, 0, bu.x, bu.y, fr);
+        fg.addColorStop(0, "rgba(255,255,255," + ((0.55 + 0.3 * bu.charge) * fa).toFixed(3) + ")");
+        fg.addColorStop(0.3, "rgba(150,175,255," + (0.30 * fa).toFixed(3) + ")");
+        fg.addColorStop(0.65, "rgba(77,107,254," + (0.14 * fa).toFixed(3) + ")");
+        fg.addColorStop(1, "rgba(30,45,150,0)");
+        ctx.fillStyle = fg;
+        ctx.beginPath(); ctx.arc(bu.x, bu.y, fr, 0, Math.PI * 2); ctx.fill();
+      }
+
+      if (age < 620) {
+        var rt2 = age / 620;
+        var ringR = bu.w1 * (0.45 + 1.15 * easeOutCubic(rt2));
+        var ra = Math.pow(1 - rt2, 1.7);
+        ctx.globalCompositeOperation = "lighter";
+        ctx.strokeStyle = "rgba(120,158,255," + (0.34 * ra).toFixed(3) + ")";
+        ctx.lineWidth = 1.2 + 2.6 * (1 - rt2);
+        ctx.beginPath(); ctx.arc(bu.x, bu.y, ringR, 0, Math.PI * 2); ctx.stroke();
+        ctx.globalCompositeOperation = "source-over";
+      }
+
+      ctx.globalCompositeOperation = "lighter";
+      var col = "rgba(" + PART_RGB[0] + "," + PART_RGB[1] + "," + PART_RGB[2] + ",";
+      var lifeMax = LIFE_BASE * LIFE_MAX + 320;
+      for (var i = 0; i < bu.particles.length; i++) {
+        var p = bu.particles[i];
+        if (age < p.birth) { activeParticles++; continue; }      // 尚未出生，仍占位
+        var ct = age - p.birth;
+        var at = ct / (LIFE_BASE * p.life);
+        if (at > 1) continue;                                    // 已消亡
+        var drag = Math.exp(-DRAG * (dt / 1000));
+        p.vx *= drag; p.vy *= drag;
+        p.x += p.vx * f; p.y += p.vy * f;
+        ctx.fillStyle = col + (1 - at).toFixed(3) + ")";
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill();
+        activeParticles++;
+      }
+      /* 回收条件独立判断：即使一粒都没生成（粒子数触顶）也能被回收 */
+      if (age > bu.birthWin + lifeMax) bursts.splice(b, 1);
+    }
+    ctx.globalCompositeOperation = "source-over";
+  }
+
+  /* ================= HUD ================= */
+  function drawHud() {
+    if (GAME.state === "play") {
+      var d = difficulty();
+      hudEl.innerHTML =
+        "<span>时间 <b>" + (GAME.elapsed / 1000).toFixed(1) + " 秒</b></span>" +
+        "<span>威胁 <b>" + GAME.sats.length + "</b></span>" +
+        "<span>危险 <b>" + Math.round(d * 100) + "%</b></span>";
+      hudEl.classList.remove("hidden");
+    } else {
+      hudEl.classList.add("hidden");
+    }
+    refreshBoomBtn();                           // 移动端：同步爆炸按钮就绪状态
+  }
+
+  /* ================= 主循环 ================= */
+  var last = performance.now();
+
+  function frame(now) {
+    var dt = Math.min(48, now - last);
+    last = now;
+    var f = dt / 16.6667;
+
+    ctx.globalCompositeOperation = "source-over";
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.globalCompositeOperation = "lighter";
+    for (var d = 0; d < dust.length; d++) {
+      var du = dust[d];
+      du.x += du.vx * f; du.y += du.vy * f;
+      du.tw += du.tws * (dt / 1000);
+      if (du.y < -4) { du.y = H + 4; du.x = Math.random() * W; }
+      if (du.x < -4) du.x = W + 4;
+      if (du.x > W + 4) du.x = -4;
+      var da = (0.10 + 0.16 * (0.5 + 0.5 * Math.sin(du.tw))) * du.z;
+      ctx.fillStyle = "rgba(150,180,255," + da.toFixed(3) + ")";
+      ctx.beginPath(); ctx.arc(du.x, du.y, du.s * du.z, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalCompositeOperation = "source-over";
+
+    /* 主角移动：桌面端平滑跟随光标；移动端由滑动位移直接驱动（速度与手指一致） */
+    var p = GAME.player;
+    if (GAME.state === "play") {
+      if (IS_MOBILE) {
+        p.r = playerRadius();                   // 尺寸随屏幕走，爆炸范围同源一起缩放
+        if (GAME.touch) {
+          p.x += GAME.touch.dx;                 // 位移 1:1；抬手时 touch 置空即立刻停
+          p.y += GAME.touch.dy;
+          GAME.touch.dx = 0;
+          GAME.touch.dy = 0;
+        }
+        if (GAME.autoCharge < 1) {              // 自动蓄力，蓄满后保持
+          GAME.autoCharge = Math.min(1, GAME.autoCharge + dt / PRESS_CHARGE_MS);
+        }
+      } else {
+        p.tx = mouse.inside ? mouse.x : p.tx;
+        p.ty = mouse.inside ? mouse.y : p.ty;
+        var k = 1 - Math.exp(-dt / 55);
+        p.x += (p.tx - p.x) * k;
+        p.y += (p.ty - p.y) * k;
+      }
+      p.x = Math.max(p.r, Math.min(W - p.r, p.x));
+      p.y = Math.max(p.r, Math.min(H - p.r, p.y));
+      updateSats(dt, f);
+      if (checkCollisions()) playerDie();
+    }
+
+    drawBursts(now, dt, f);
+    if (mouse.clickFrames > 0) mouse.clickFrames--;      // 推进光标点击动画
+    if (GAME.state === "title") {
+      drawTitleMark(now);                     // 标题界面：上方 2/3 的呼吸大图标
+      drawCursor(now);                        // 系统光标已隐藏，用微缩 DS 顶替
+    } else if (GAME.state === "dead") {
+      drawCursor(now);                        // 结束界面同样用微缩 DS 当光标
+    } else {
+      drawPlayer(now);
+    }
+    if (GAME.state === "play" || GAME.state === "dead") drawSats(now);
+
+    playerGlow *= Math.exp(-dt / 260);
+    drawHud();
+
+    /* 屏幕震动 */
+    if (shakeAmp > 0) {
+      var shk = shakeT / SHAKE_MS;
+      if (shk >= 1) { shakeAmp = 0; shakeEl.style.transform = ""; }
+      else {
+        shakeT += dt;
+        var decay = Math.pow(1 - shk, 1.5);
+        shakeEl.style.transform = "translate(" +
+          ((Math.random() - 0.5) * shakeAmp * decay).toFixed(2) + "px," +
+          ((Math.random() - 0.5) * shakeAmp * decay).toFixed(2) + "px)";
+      }
+    }
+
+    requestAnimationFrame(frame);
+  }
+
+  /* 标题 / 结束界面：用一个微缩 DS 图标代替鼠标光标。
+     点击（按下）后约 16 帧内微微膨胀并发光，用帧计数驱动，
+     不依赖时间戳，避免 rAF 与 performance.now 基准不一致。 */
+  function drawCursor(now) {
+    if (IS_MOBILE) return;                      // 移动端不画触摸点光标
+    if (!mouse.inside) return;
+    var k = (mouse.clickFrames > 0) ? mouse.clickFrames / 16 : 0;   // 1 -> 0
+    var ease = k * k;                                               // 快速衰减
+    var size = playerRadius() * 1.5 * (1 + 0.34 * ease);            // 微缩版，约 0.75× 主角
+    var glow = 14 + 46 * ease;
+    mouse.size = size;                                              // 供调试读取
+    mouse.glow = glow;
+    drawIcon(ICON.ds, mouse.x, mouse.y, size, 0, 1, glow, "rgba(77,107,254,0.95)", 1, 1);
+    if (ease > 0.02) {                                              // 点击瞬间的一圈扩散光
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.globalAlpha = 0.42 * ease;
+      var r = size * (0.72 + 0.55 * (1 - k));
+      var rg2 = ctx.createRadialGradient(mouse.x, mouse.y, size * 0.25, mouse.x, mouse.y, r);
+      rg2.addColorStop(0, "rgba(150,185,255,0.85)");
+      rg2.addColorStop(1, "rgba(60,90,255,0)");
+      ctx.fillStyle = rg2;
+      ctx.beginPath(); ctx.arc(mouse.x, mouse.y, r, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  /* ================= 标题界面：上方 2/3 一个呼吸的 DS 图标 ================= */
+  function drawTitleMark(now) {
+    var t = now / 1000;
+    var base = Math.min(W * 0.34, H * 0.40);          // 大图标
+    var scale = 1 + 0.045 * Math.sin(t * 1.25);       // 呼吸：尺寸微微起伏
+    var pulse = 0.5 + 0.5 * Math.sin(t * 1.25);       // 与尺寸同步的荧光明暗
+    var size = base * scale;
+    var cx = W / 2, cy = H * 0.36;                    // 落在上方 2/3 的中间
+
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+
+    /* 外层呼吸光晕 */
+    var halo = size * (1.5 + 0.14 * pulse);
+    var rg = ctx.createRadialGradient(cx, cy, size * 0.15, cx, cy, halo);
+    rg.addColorStop(0, "rgba(110,150,255," + (0.30 + 0.16 * pulse).toFixed(3) + ")");
+    rg.addColorStop(0.45, "rgba(77,107,254," + (0.14 + 0.08 * pulse).toFixed(3) + ")");
+    rg.addColorStop(1, "rgba(40,60,180,0)");
+    ctx.fillStyle = rg;
+    ctx.beginPath(); ctx.arc(cx, cy, halo, 0, Math.PI * 2); ctx.fill();
+
+    /* 一圈随呼吸扩散的细环 */
+    var ringR = size * (0.72 + 0.30 * pulse);
+    ctx.globalAlpha = 0.10 + 0.16 * (1 - pulse);
+    ctx.strokeStyle = "rgba(150,190,255,1)";
+    ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.arc(cx, cy, ringR, 0, Math.PI * 2); ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.restore();
+
+    /* 图标本体：发光强度跟着呼吸 */
+    var glow = 26 + 34 * pulse;
+    drawIcon(ICON.ds, cx, cy, size, 0, 1, glow, "rgba(77,107,254,0.95)", 1, 1);
+  }
+
+  /* 标题界面：下 1/3 放玩法介绍，上 2/3 留给呼吸图标 */
+  hintEl.innerHTML = IS_MOBILE
+    ? "<b>DEEPSEEK&nbsp;·&nbsp;爆裂求生</b>" +
+      "<em>滑动屏幕移动 <i>DeepSeek</i> 躲避其他AI的攻击</em>" +
+      "<em><i>ChatGPT</i> 旋转飞行 · <i>Claude</i> 放射线</em>" +
+      "<em>蓄力会自动充满，点 <i>爆炸</i> 按钮炸烂身边的 ChatGPT</em>" +
+      "<em>触摸屏幕任意位置开始</em>"
+    : "<b>DEEPSEEK&nbsp;·&nbsp;爆裂求生</b>" +
+      "<em>移动鼠标引导 <i>DeepSeek</i> 躲避其他AI的攻击</em>" +
+      "<em><i>ChatGPT</i> 旋转飞行 · <i>Claude</i> 放射线</em>" +
+      "<em>贴近ChatGPT后 <i>蓄力爆炸</i> 可以把它炸烂</em>" +
+      "<em>按 <i>空格</i> 或点击开始</em>";
+
+  requestAnimationFrame(frame);
+
+  window.__game = {
+    state: function () { return GAME.state; },
+    start: resetGame,
+    stats: function () {
+      return {
+        state: GAME.state, elapsed: GAME.elapsed, sats: GAME.sats.length,
+        types: GAME.sats.map(function (s) { return s.type; }),
+        player: [Math.round(GAME.player.x), Math.round(GAME.player.y)],
+        flip: GAME.player.flip, flipS: GAME.player.flipS, flipY: GAME.player.flipY, flipT: GAME.player.flipT,   // 朝向：1=朝左(原图), -1=朝右(镜像)
+        bursts: bursts.length, particles: activeParticles, difficulty: difficulty(),
+        kills: GAME.kills, gpts: GAME.sats.filter(function (s) { return s.type === "gpt"; }).length,
+        playTime: GAME.playTime, deaths: GAME.deaths,
+        isMobile: IS_MOBILE, autoCharge: GAME.autoCharge, touching: !!GAME.touch,
+        playerR: GAME.player.r, flipWant: GAME.player.flipWant, flipT: GAME.player.flipT,
+        shake: shakeAmp, mouseInside: mouse.inside, clickFrames: mouse.clickFrames,
+        cursorSize: mouse.size || 0, cursorGlow: mouse.glow || 0
+      };
+    },
+    spawn: function (type, x, y) {
+      if (type === "gpt") spawnGpt(0);
+      else if (type === "claude") { spawnClaude(0); var s = GAME.sats[GAME.sats.length - 1]; if (x !== undefined) { s.x = x; s.y = y; } }
+      else { spawnClaude(0); var t = GAME.sats[GAME.sats.length - 1]; if (x !== undefined) { t.x = x; t.y = y; } }
+      return GAME.sats[GAME.sats.length - 1];
+    },
+    sats: function () { return GAME.sats; },
+    debug: function () {
+      return { active: activeParticles, burstCount: bursts.length,
+               lens: bursts.map(function (b) { return b.particles.length; }) };
+    },
+    movePlayer: function (x, y) { GAME.player.x = x; GAME.player.y = y; GAME.player.tx = x; GAME.player.ty = y; },
+    explode: explodeAt
+  };
+})();
+
+</script>
+</body>
+</html>
