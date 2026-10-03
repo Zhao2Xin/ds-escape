@@ -94,6 +94,13 @@
   #boardList li.me{background:rgba(50,90,200,.30);box-shadow:inset 0 0 0 1px rgba(120,160,255,.45)}
   #boardList li.me .nm{color:#fff;font-weight:700}
   #myrank{font-size:12.5px;color:#9fb6d6}
+  #credit{
+    font-size:11.5px;line-height:1.7;color:#7d92b3;
+    border-top:1px solid rgba(90,130,220,.25);padding-top:7px;
+  }
+  #credit b{color:#a9c3e8;font-weight:700}
+  #credit a{color:#79b8ff;text-decoration:none}
+  #credit a:active{color:#cfe4ff}
   #again{font-size:12px;color:#7d92b3}
 
   #hud{
@@ -173,6 +180,10 @@
   <div id="submsg"></div>
   <div id="boardWrap"><ul id="boardList"></ul></div>
   <div id="myrank"></div>
+  <div id="credit">
+    作者 <b>ZhaoXin</b> · 由 <b>DSH</b> 辅助创作<br>
+    有任何问题欢迎反馈到 <a href="mailto:zhaoxin2@mail.nwpu.edu.cn">zhaoxin2@mail.nwpu.edu.cn</a>
+  </div>
   <div id="again">点击画面 / 空格 重新开始</div>
 </div>
 <div id="boomBtn">爆炸</div>
@@ -1443,7 +1454,11 @@
           setSubMsg("提交失败：" + briefErr(res), "bad");
           return null;
         }
-        if (res.data === null) {
+        /* 后端函数在"成绩没变好"时不更新任何行：此时 plpgsql 返回的是一行全 null 的字段
+           （不是 SQL NULL），所以要按字段判断，否则会把"没覆盖"误报成"已提交" */
+        var updated = res.data && typeof res.data === "object" &&
+                      res.data.id != null && res.data.player_name != null;
+        if (!updated) {
           subBtn.disabled = false;
           setSubMsg("本次成绩不如你之前的，已保留原成绩", "bad");
           return boardLoad();
