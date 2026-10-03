@@ -50,6 +50,52 @@
     50%{opacity:1;filter:brightness(1.18)}
   }
 
+  /* ================= 结束界面 + 排行榜 ================= */
+  #over{
+    position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);
+    z-index:20;display:none;flex-direction:column;gap:9px;
+    width:min(92vw,420px);max-height:88vh;overflow:hidden;
+    padding:16px 16px 12px;border-radius:14px;box-sizing:border-box;
+    background:rgba(8,12,22,.93);border:1px solid rgba(90,130,220,.45);
+    box-shadow:0 0 40px rgba(40,80,200,.35);
+    text-align:center;touch-action:auto;font-size:13px;color:#c2d8f5;
+  }
+  #over.show{display:flex}
+  #over h2{margin:0;font-size:clamp(20px,3vw,26px);letter-spacing:.10em;color:#eaf2ff;
+           text-shadow:0 0 14px rgba(120,170,255,.9),0 0 34px rgba(77,107,254,.7)}
+  #over .stat{font-size:clamp(13px,1.6vw,16px);letter-spacing:.08em;color:#c2d8f5}
+  #over .stat i{font-style:normal;font-weight:700;color:#fff;text-shadow:0 0 12px rgba(120,170,255,.9)}
+  #over .subrow{display:flex;gap:8px}
+  #pname{
+    flex:1;min-width:0;padding:9px 10px;border-radius:8px;
+    border:1px solid rgba(90,130,220,.5);background:rgba(16,22,38,.9);
+    color:#eaf2ff;font:inherit;text-align:center;
+    user-select:text;-webkit-user-select:text;
+  }
+  #pname::placeholder{color:#5f7291}
+  #submitBtn{
+    padding:9px 13px;border:0;border-radius:8px;background:#2b5fd9;color:#fff;
+    font:inherit;font-weight:700;white-space:nowrap;cursor:pointer;
+  }
+  #submitBtn:disabled{opacity:.5}
+  #submsg{min-height:17px;font-size:12px;color:#8fa8c8}
+  #submsg.ok{color:#5fd07a}
+  #submsg.bad{color:#ff8f8f}
+  #boardWrap{
+    flex:1;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y;
+    border-top:1px solid rgba(90,130,220,.25);padding-top:8px;text-align:left;
+  }
+  #boardList{list-style:none;margin:0;padding:0}
+  #boardList li{display:flex;gap:8px;align-items:baseline;padding:3px 4px;border-radius:6px;
+                font-size:12.5px;color:#b9cbe4}
+  #boardList li .rk{width:2.1em;flex:none;text-align:right;color:#7d92b3}
+  #boardList li .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#dce8ff}
+  #boardList li .sc{flex:none;color:#a9c3e8}
+  #boardList li.me{background:rgba(50,90,200,.30);box-shadow:inset 0 0 0 1px rgba(120,160,255,.45)}
+  #boardList li.me .nm{color:#fff;font-weight:700}
+  #myrank{font-size:12.5px;color:#9fb6d6}
+  #again{font-size:12px;color:#7d92b3}
+
   #hud{
     position:fixed;left:26px;top:22px;z-index:11;display:flex;gap:26px;
     font-size:15px;letter-spacing:.10em;color:#b9cbe4;pointer-events:none;user-select:none;
@@ -61,16 +107,6 @@
   }
   #hud.hidden{display:none}
 
-  .brand{
-    position:fixed;right:26px;top:22px;z-index:10;pointer-events:none;user-select:none;
-    display:flex;align-items:center;flex-direction:row-reverse;gap:10px;
-  }
-  .brand .dot{
-    width:8px;height:8px;border-radius:50%;background:#4d6fff;
-    box-shadow:0 0 12px 2px rgba(77,111,255,.9);animation:pulse 2s ease-in-out infinite;
-  }
-  @keyframes pulse{0%,100%{transform:scale(1);opacity:.85}50%{transform:scale(1.55);opacity:1}}
-  .brand .txt{font-size:12px;letter-spacing:.14em;color:#8ea7c6;text-shadow:0 0 12px rgba(0,0,0,.9)}
   /* ================= 移动端适配 ================= */
   body{touch-action:none;overscroll-behavior:none}          /* 禁止页面滚动/缩放 */
   #boomBtn{
@@ -109,12 +145,9 @@
   @media (orientation:landscape){
     #boomBtn{left:calc(18px + env(safe-area-inset-left,0px));top:50%;--by:-50%}
   }
-  /* 移动端：HUD / 游戏名缩小，避免遮挡 */
+  /* 移动端：HUD 缩小，避免遮挡 */
   .is-mobile #hud{left:14px;top:12px;gap:12px;font-size:12px;letter-spacing:.06em}
   .is-mobile #hud b{font-size:15px}
-  .is-mobile .brand{right:14px;top:12px;gap:7px}
-  .is-mobile .brand .txt{font-size:10px;letter-spacing:.10em}
-  .is-mobile .brand .dot{width:6px;height:6px}
   /* 横屏矮屏：介绍压缩，避免溢出 */
   @media (orientation:landscape) and (max-height:620px){
     .hint{height:44vh;gap:6px;padding:0 14px}
@@ -129,8 +162,19 @@
   <div class="vig"></div>
   <div id="hint" class="hint"></div>
 </div>
-<div class="brand"><i class="dot"></i><span class="txt">DEEPSEEK&nbsp;·&nbsp;爆裂求生</span></div>
 <div id="hud" class="hidden"></div>
+<div id="over">
+  <h2>游戏结束</h2>
+  <div class="stat">存活 <i id="ovSurv">0</i> 秒 · 击杀 <i id="ovKills">0</i></div>
+  <div class="subrow">
+    <input id="pname" maxlength="12" placeholder="输入用户名（≤12 字）" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <button id="submitBtn">提交</button>
+  </div>
+  <div id="submsg"></div>
+  <div id="boardWrap"><ul id="boardList"></ul></div>
+  <div id="myrank"></div>
+  <div id="again">点击画面 / 空格 重新开始</div>
+</div>
 <div id="boomBtn">爆炸</div>
 
 <script>
@@ -473,6 +517,7 @@
     GAME.player.flipY = 1;
     playerGlow = 1;
     hideHint();
+    hideOver();          // 关掉结束界面（如果开着）
   }
 
   function playerDie() {
@@ -483,11 +528,8 @@
     GAME.deaths++;
     window.setTimeout(function () {
       if (GAME.state !== "dead") return;    // 已经重开了就不弹
-      hintEl.classList.remove("hidden");
-      hintEl.innerHTML =
-        "<b>游戏结束</b>" +
-        "<em>存活 <i>" + (GAME.elapsed / 1000).toFixed(1) + "s</i></em>" +
-        "<em>按 <i>空格</i> / 点击画面 重新开始</em>";
+      hintEl.classList.add("hidden");
+      showOver();                           // 结束界面：本局成绩 + 排行榜
     }, 700);
   }
 
@@ -839,6 +881,8 @@
   }, { passive: true });
 
   window.addEventListener("keydown", function (ev) {
+    /* 正在输入用户名时，空格/回车不能被当成"重开" */
+    if (pnameEl && document.activeElement === pnameEl) return;
     if (ev.code !== "Space" && ev.key !== "Enter") return;
     ev.preventDefault && ev.preventDefault();
     if (GAME.state !== "play") { resetGame(); return; }
@@ -1241,9 +1285,208 @@
       "<em>贴近ChatGPT后 <i>蓄力爆炸</i> 可以把它炸烂</em>" +
       "<em>按 <i>空格</i> 或点击开始</em>";
 
+  /* ================= 排行榜（Supabase，纯 fetch 调 REST） =================
+     设计要点：
+     · 不引任何 SDK，直接打 PostgREST；表：leaderboard(player_name, kills, survival_time, created_at)
+     · 排序口径：存活时间优先、击杀次之
+     · 一人一行：user 名唯一；同名再提交时由数据库函数 submit_score 只在成绩更好时覆盖
+     · 浏览器读不到 content-range（未配 expose-headers），所以名次 = "严格优于我的人数" + 1
+     · 任何失败都只影响这块 UI，绝不打断游戏（统一返回 {ok,status,data}，不抛异常） */
+  var SUPA = {
+    url: "https://eewpfpnuahbdqfjbenje.supabase.co",
+    key: "sb_publishable_Q4YEPcnsorDKFKxyF4WIvA_xKYIpzBO",
+    table: "leaderboard",
+    rpc: "submit_score",
+    nameKey: "ds_leaderboard_name",
+    limit: 10
+  };
+
+  var overEl = document.getElementById("over");
+  var boardListEl = document.getElementById("boardList");
+  var myRankEl = document.getElementById("myrank");
+  var pnameEl = document.getElementById("pname");
+  var subBtn = document.getElementById("submitBtn");
+  var subMsgEl = document.getElementById("submsg");
+  var ovSurvEl = document.getElementById("ovSurv");
+  var ovKillsEl = document.getElementById("ovKills");
+
+  function sbUrl(path) { return SUPA.url.replace(/\/+$/, "") + "/rest/v1/" + path; }
+  function sbReq(method, path, opts) {
+    opts = opts || {};
+    var headers = { apikey: SUPA.key, Authorization: "Bearer " + SUPA.key, "Content-Type": "application/json" };
+    if (opts.headers) for (var k in opts.headers) headers[k] = opts.headers[k];
+    return fetch(sbUrl(path), {
+      method: method, headers: headers,
+      body: opts.body === undefined ? undefined : JSON.stringify(opts.body)
+    }).then(function (r) {
+      return r.text().then(function (t) {
+        var data = null;
+        try { data = t ? JSON.parse(t) : null; } catch (e) { data = t; }
+        return { ok: r.ok, status: r.status, data: data };
+      });
+    }).catch(function (e) {
+      return { ok: false, status: 0, data: (e && e.message) || String(e) };
+    });
+  }
+  function briefErr(res) {
+    var d = res && res.data;
+    if (res && res.status === 0) return "网络不可达";
+    if (d && d.message) return d.message;
+    if (typeof d === "string" && d) return d.slice(0, 80);
+    return "HTTP " + (res ? res.status : "?");
+  }
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function savedName() { try { return window.localStorage.getItem(SUPA.nameKey) || ""; } catch (e) { return ""; } }
+  function rememberName(n) { try { window.localStorage.setItem(SUPA.nameKey, n); } catch (e) {} }
+  function setSubMsg(t, cls) { if (subMsgEl) { subMsgEl.textContent = t || ""; subMsgEl.className = cls || ""; } }
+
+  /* ---------- 结束界面 ---------- */
+  function showOver() {
+    if (!overEl) return;
+    ovSurvEl.textContent = (GAME.elapsed / 1000).toFixed(1);
+    ovKillsEl.textContent = GAME.kills;
+    if (!pnameEl.value) pnameEl.value = savedName();
+    setSubMsg("");
+    subBtn.disabled = false;
+    overEl.classList.add("show");
+    boardLoad();
+  }
+  function hideOver() { if (overEl) overEl.classList.remove("show"); }
+
+  /* 结束界面自己吃掉 pointerdown，避免点输入框/按钮被当成"点击画面重新开始" */
+  if (overEl) {
+    overEl.addEventListener("pointerdown", function (ev) { ev.stopPropagation(); });
+    overEl.addEventListener("click", function (ev) { ev.stopPropagation(); });
+  }
+  if (subBtn) subBtn.addEventListener("click", function () { submitScore(); });
+  if (pnameEl) {
+    pnameEl.addEventListener("keydown", function (ev) {
+      ev.stopPropagation();
+      if (ev.key === "Enter") { ev.preventDefault(); submitScore(); }
+    });
+  }
+
+  /* ---------- 读榜 ---------- */
+  function boardLoad() {
+    boardListEl.innerHTML = '<li><span class="rk"></span><span class="nm">加载中…</span></li>';
+    myRankEl.textContent = "";
+    return sbReq("GET", SUPA.table + "?select=player_name,kills,survival_time" +
+                        "&order=survival_time.desc,kills.desc&limit=" + SUPA.limit)
+      .then(function (res) {
+        if (!res.ok || !Array.isArray(res.data)) {
+          boardListEl.innerHTML = '<li><span class="rk"></span><span class="nm">排行榜暂不可用（' + esc(briefErr(res)) + '）</span></li>';
+          return;
+        }
+        renderBoard(res.data, savedName());
+        return refreshMyRank();
+      });
+  }
+  function renderBoard(rows, me) {
+    if (!rows.length) {
+      boardListEl.innerHTML = '<li><span class="rk"></span><span class="nm">还没有人上榜，你可以是第一个</span></li>';
+      return;
+    }
+    var html = "";
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      var isMe = me && r.player_name === me;
+      html += '<li class="' + (isMe ? "me" : "") + '">' +
+                '<span class="rk">' + (i + 1) + "</span>" +
+                '<span class="nm">' + esc(r.player_name) + "</span>" +
+                '<span class="sc">' + r.survival_time + "s / " + r.kills + "杀</span>" +
+              "</li>";
+    }
+    boardListEl.innerHTML = html;
+  }
+
+  /* 名次 = 严格优于我的人数 + 1（int 比较，避免 JSON 里的字段名歧义） */
+  function countBetter(surv, kills) {
+    var f = "or=(survival_time.gt." + surv + ",and(survival_time.eq." + surv + ",kills.gt." + kills + "))";
+    return sbReq("GET", SUPA.table + "?select=id&" + encodeURI(f) + "&limit=1000");
+  }
+  function refreshMyRank() {
+    var name = savedName();
+    if (!name) { myRankEl.textContent = "提交成绩后这里会显示你的名次"; return Promise.resolve(); }
+    return sbReq("GET", SUPA.table + "?select=player_name,kills,survival_time&player_name=eq." +
+                         encodeURIComponent(name) + "&limit=1")
+      .then(function (res) {
+        var row = (res.ok && Array.isArray(res.data)) ? res.data[0] : null;
+        if (!row) { myRankEl.textContent = "提交成绩后这里会显示你的名次"; return; }
+        return countBetter(row.survival_time, row.kills).then(function (r2) {
+          var n = (r2.ok && Array.isArray(r2.data)) ? r2.data.length : null;
+          myRankEl.innerHTML = "我（" + esc(row.player_name) + "）最好：<b>" + row.survival_time + "s</b> / <b>" +
+                               row.kills + "杀</b>" + (n === null ? "" : "　第 <b>" + (n + 1) + "</b> 名");
+        });
+      });
+  }
+
+  /* ---------- 提交 ---------- */
+  function submitScore() {
+    var name = (pnameEl.value || "").trim().replace(/\s+/g, " ");
+    if (!name) { setSubMsg("请输入用户名", "bad"); pnameEl.focus(); return; }
+    if (name.length > 12) { setSubMsg("用户名最多 12 个字", "bad"); return; }
+    var kills = Math.max(0, Math.round(GAME.kills));
+    var surv = Math.max(0, Math.round(GAME.elapsed / 1000));
+    rememberName(name);
+    subBtn.disabled = true;
+    setSubMsg("提交中…");
+    sbReq("POST", "rpc/" + SUPA.rpc, { body: { p_name: name, p_kills: kills, p_survival: surv } })
+      .then(function (res) {
+        /* 后端函数还没建（PGRST202 / 404）时退回"查重 + 直接插入" */
+        if (res.status === 404 || (res.data && res.data.code === "PGRST202")) return submitFallback(name, kills, surv);
+        if (!res.ok) {
+          subBtn.disabled = false;
+          setSubMsg("提交失败：" + briefErr(res), "bad");
+          return null;
+        }
+        if (res.data === null) {
+          subBtn.disabled = false;
+          setSubMsg("本次成绩不如你之前的，已保留原成绩", "bad");
+          return boardLoad();
+        }
+        setSubMsg("已提交：" + surv + "s / " + kills + "杀", "ok");
+        subBtn.disabled = false;
+        return boardLoad();
+      });
+  }
+
+  /* 兜底路径：不让插入（后端函数那套"更好才覆盖"用不了），只允许全新名字 */
+  function submitFallback(name, kills, surv) {
+    return sbReq("GET", SUPA.table + "?select=id&player_name=eq." + encodeURIComponent(name) + "&limit=1")
+      .then(function (res) {
+        if (!res.ok) { subBtn.disabled = false; setSubMsg("提交失败：" + briefErr(res), "bad"); return; }
+        if (Array.isArray(res.data) && res.data.length) {
+          subBtn.disabled = false;
+          setSubMsg("这个名字已被使用，换一个吧", "bad");
+          return;
+        }
+        return sbReq("POST", SUPA.table, {
+          headers: { Prefer: "return=representation" },
+          body: { player_name: name, kills: kills, survival_time: surv }
+        }).then(function (r2) {
+          subBtn.disabled = false;
+          if (r2.ok) { setSubMsg("已提交：" + surv + "s / " + kills + "杀", "ok"); return boardLoad(); }
+          var s = JSON.stringify(r2.data || "");
+          if (r2.status === 409 || s.indexOf("23505") >= 0) setSubMsg("这个名字刚被抢了，换一个吧", "bad");
+          else setSubMsg("提交失败：" + briefErr(r2), "bad");
+        });
+      });
+  }
+
+  window.__board = {                       // 便于脚本/控制台测试
+    load: boardLoad, submit: submitScore, rank: refreshMyRank,
+    rows: function () { return boardListEl ? boardListEl.textContent : ""; },
+    state: function () { return { shown: !!(overEl && overEl.classList.contains("show")), msg: subMsgEl ? subMsgEl.textContent : "" }; }
+  };
+
   requestAnimationFrame(frame);
 
   window.__game = {
+    board: window.__board,                  // 排行榜接口（调试/测试用）
     state: function () { return GAME.state; },
     start: resetGame,
     stats: function () {
